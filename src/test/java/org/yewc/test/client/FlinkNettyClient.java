@@ -54,8 +54,14 @@ public class FlinkNettyClient {
             jo.put("jobManager", "10.17.6.146:7081");
             jo.put("flinkJar", "flink-executor-test.jar");
             jo.put("classPaths", new JSONArray());
-            jo.put("params", new JSONObject("{\"programArgs\":\" --template-path hdfs://10.16.6.185:8020/flink/job-template/2c938a6e70a4f7fa0170a4fa56810000_1584009005309.json\",\"parallelism\":1}"));
-            jo.put("executeType", "restful");
+            jo.put("clientParams", new JSONObject("{\"programArgs\":\" --template-path hdfs://10.16.6.185:8020/flink/job-template/2c938a6e70a4f7fa0170a4fa56810000_1584009005309.json\",\"parallelism\":1}"));
+            JSONObject systemJo = new JSONObject();
+            systemJo.put("flinkSdkHdfsPath", "/flink/sdk");
+            systemJo.put("flinkClasspathHdfsPath", "/flink/classpath");
+            systemJo.put("flinkTemporaryJarPath", "e:\\tmp");
+            jo.put("systemParams", systemJo);
+
+            jo.put("executeType", "client");
 
             ByteBuf encoded = channel.alloc().buffer(4 * jo.toString().length());
             encoded.writeBytes(jo.toString().getBytes());

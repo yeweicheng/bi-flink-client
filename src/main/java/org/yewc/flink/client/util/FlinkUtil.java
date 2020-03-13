@@ -45,10 +45,6 @@ public final class FlinkUtil {
     public static final String FIELD_NAME_SAVEPOINTPATH = "savepointPath";
     public static final String FIELD_NAME_ALLOWNONRESTOREDSTATE = "allowNonRestoredState";
 
-    public static String FLINK_SDK_HDFS_PATH = null;
-    public static String FLINK_CLASSPATH_HDFS_PATH = null;
-    public static String FLINK_TEMPORARY_JAR_PATH = null;
-
     private static final Map<String, ClusterClient> clientMap = new HashMap<>(2);
 
     public static String getJarId(String jobManager, String jarName) throws Exception {
@@ -74,17 +70,18 @@ public final class FlinkUtil {
         return files;
     }
 
-    public static String submit(String jobManager, String jarName, List<String> classPaths, JSONObject param, ExecuteType executeType) throws Exception {
+    public static String submit(String jobManager, String jarName, List<String> classPaths,
+                                JSONObject clientParams, JSONObject systemParams, ExecuteType executeType) throws Exception {
         String url = String.format(SUBMIT_JOB, jobManager, getJarId(jobManager, jarName));
         if (executeType.equals(ExecuteType.EXPLAIN)) {
 //            return "curl -H \"Content-Type: application/json\" -XPOST '" + url + "' -d'" + param.toString() + "'";
             JSONObject jo = new JSONObject();
             jo.put("url", url);
             jo.put("classPaths", classPaths);
-            jo.put("param", param);
+            jo.put("param", clientParams);
             return jo.toString();
         } else if (executeType.equals(ExecuteType.RESTFUL)) {
-            return HttpReqUtil.post(url, RequestBody.create(HttpReqUtil.jsonType, param.toString()), true);
+            return HttpReqUtil.post(url, RequestBody.create(HttpReqUtil.jsonType, clientParams.toString()), true);
         } else if (executeType.equals(ExecuteType.CLIENT)) {
             ClusterClient<?> clusterClient;
             if (clientMap.containsKey(jobManager)) {
@@ -103,29 +100,33 @@ public final class FlinkUtil {
                 clientMap.put(jobManager, clusterClient);
             }
 
+            String flinkSdkHdfsPath = systemParams.getString("flinkSdkHdfsPath");
+            String flinkClasspathHdfsPath = systemParams.getString("flinkClasspathHdfsPath");
+            String flinkTemporaryJarPath = systemParams.getString("flinkTemporaryJarPath");
+
             String sdkName = jarName.split("/")[jarName.split("/").length - 1];
-            File sdkFile = new File(FLINK_TEMPORARY_JAR_PATH + "/" + sdkName);
+            File sdkFile = new File(flinkTemporaryJarPath + "/" + sdkName);
             if (!sdkFile.exists()) {
                 HadoopClient.downloadFileToLocal(HadoopClient.DEFAULT_NAMENODE, HadoopClient.DEFAULT_USER,
-                        FLINK_SDK_HDFS_PATH + "/" + sdkName, FLINK_TEMPORARY_JAR_PATH + "/" + sdkName);
+                        flinkSdkHdfsPath + "/" + sdkName, flinkTemporaryJarPath + "/" + sdkName);
             }
 
             List<URL> urlList = new ArrayList<>();
             for (int i = 0; i < classPaths.size(); i++) {
                 String cp = classPaths.get(i);
                 String cpName = cp.split("/")[cp.split("/").length - 1];
-                File cpFile = new File(FLINK_TEMPORARY_JAR_PATH + "/" + cpName);
+                File cpFile = new File(flinkTemporaryJarPath + "/" + cpName);
                 if (!cpFile.exists()) {
                     HadoopClient.downloadFileToLocal(HadoopClient.DEFAULT_NAMENODE, HadoopClient.DEFAULT_USER,
-                            FLINK_CLASSPATH_HDFS_PATH + "/" + cpName, FLINK_TEMPORARY_JAR_PATH + "/" + cpName);
+                            flinkClasspathHdfsPath + "/" + cpName, flinkTemporaryJarPath + "/" + cpName);
                 }
                 urlList.add(cpFile.toURI().toURL());
             }
 
-            String[] args = param.getString(FIELD_NAME_PROGRAM_ARGUMENTS).trim().split(" ");
+            String[] args = clientParams.getString(FIELD_NAME_PROGRAM_ARGUMENTS).trim().split(" ");
             PackagedProgram prg = new PackagedProgram(sdkFile, urlList, args);
-            if (param.has(FIELD_NAME_SAVEPOINTPATH)) {
-                prg.setSavepointRestoreSettings(SavepointRestoreSettings.forPath(param.getString(FIELD_NAME_SAVEPOINTPATH)));
+            if (clientParams.has(FIELD_NAME_SAVEPOINTPATH)) {
+                prg.setSavepointRestoreSettings(SavepointRestoreSettings.forPath(clientParams.getString(FIELD_NAME_SAVEPOINTPATH)));
             }
 
             JSONObject jo = new JSONObject();
@@ -136,7 +137,7 @@ public final class FlinkUtil {
 //                    ClassLoader cl = Thread.class.getClassLoader();
 //                    classLoader = new DynamicJarClassLoader(urlList.toArray(new URL[urlList.size()]), cl);
 //                }
-                JobSubmissionResult result = clusterClient.run(prg, param.getInt(FIELD_NAME_PARALLELISM));
+                JobSubmissionResult result = clusterClient.run(prg, clientParams.getInt(FIELD_NAME_PARALLELISM));
                 jo.put("jobid", result.getJobID().toHexString());
 //                if (classLoader != null) {
 //                    classLoader.close();

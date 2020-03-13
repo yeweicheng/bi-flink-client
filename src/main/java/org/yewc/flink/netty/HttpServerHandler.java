@@ -5,11 +5,15 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.yewc.flink.client.util.FlinkUtil;
 
 import java.util.List;
 
 public class HttpServerHandler extends ChannelInboundHandlerAdapter {
+
+    public static final Logger logger = LoggerFactory.getLogger(HttpServerHandler.class);
 
     //读取客户端发过来的请求，并且向客户端响应
     @Override
@@ -37,6 +41,7 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
                 callback.put("requestId", requestId);
                 callback.put("msg", e.getMessage());
                 String data = callback.toString();
+                logger.error("callback -> " + data);
 
                 ByteBuf encoded = ctx.alloc().buffer(4 * data.length());
                 encoded.writeBytes(data.getBytes());
@@ -48,13 +53,14 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
 
     private void submit(ChannelHandlerContext ctx, JSONObject jo) throws Exception {
         // 向客户端发送消息
-        System.out.println("request -> " + jo.toString());
+        logger.info("request -> " + jo.toString());
 
         String requestId = jo.getString("requestId");
         String jobManager = jo.getString("jobManager");
         String flinkJar = jo.getString("flinkJar");
         List classPaths = jo.getJSONArray("classPaths").toList();
-        JSONObject params = jo.getJSONObject("params");
+        JSONObject clientParams = jo.getJSONObject("clientParams");
+        JSONObject systemParams = jo.getJSONObject("systemParams");
         String type = jo.getString("executeType");
         FlinkUtil.ExecuteType executeType = null;
         if ("client".equals(type)) {
@@ -65,12 +71,12 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
             executeType = FlinkUtil.ExecuteType.EXPLAIN;
         }
 
-        String returnData = FlinkUtil.submit(jobManager, flinkJar, classPaths, params, executeType);
+        String returnData = FlinkUtil.submit(jobManager, flinkJar, classPaths, clientParams, systemParams, executeType);
         JSONObject callback = new JSONObject(returnData);
         callback.put("requestId", requestId);
 
         String data = callback.toString();
-        System.out.println("callback -> " + data);
+        logger.info("callback -> " + data);
 
         ByteBuf encoded = ctx.alloc().buffer(4 * data.length());
         encoded.writeBytes(data.getBytes());
@@ -80,7 +86,7 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        System.out.println("远程有连接进入");
+        logger.info("远程有连接进入");
         super.channelActive(ctx);
     }
 
@@ -97,7 +103,7 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        System.out.println("远程有连接退出");
+        logger.info("远程有连接退出");
         super.channelInactive(ctx);
     }
 
@@ -108,7 +114,7 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        System.out.println(cause.getMessage());
+        logger.error(cause.getMessage());
 //        super.exceptionCaught(ctx, cause);
     }
 }
