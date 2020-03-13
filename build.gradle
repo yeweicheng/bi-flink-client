@@ -6,9 +6,10 @@ apply plugin: 'java'
 apply plugin: 'application'
 apply plugin: 'idea'
 
+mainClassName = "org.yewc.flink.entry.ClientMain"
 
 group = 'org.yewc.flink'
-version = '1.0-SNAPSHOT'
+version = '1.8.0-SNAPSHOT'
 sourceCompatibility = 1.8
 
 dependencies {
@@ -28,7 +29,7 @@ dependencies {
 allprojects {
 
     group 'org.yewc.flink'
-    version '1.0-SNAPSHOT'
+    version '1.8.0-SNAPSHOT'
 
 //	repositories {
 //		maven { url "http://nexus.fanxing.kgidc.cn/nexus/content/groups/public/" }
@@ -44,19 +45,17 @@ allprojects {
 
 }
 
-subprojects  {
-
-    task copyLib(type: Sync, dependsOn: jar) {
-        from configurations.compile
-        from jar.archivePath
-        into 'build/deploy'
+jar {
+    manifest {
+        attributes("Main-Class": "org.yewc.flink.entry.ClientMain",
+                "Implementation-Title": "Gradle")
     }
-
-    task deploy(dependsOn: copyLib)
-
-    // 显示当前项目下所有用于 compile 的 jar.
-    task listJars(description: 'Display all compile jars.') << {
-        configurations.compile.each { File file -> println file.name }
+    from {
+        configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
     }
+    zip64 true
+}
 
+tasks.withType(JavaCompile){
+    options.encoding = "UTF-8"
 }
