@@ -78,6 +78,7 @@ jar {
 }
 
 shadowJar {
+    mergeServiceFiles()
     configurations = [project.configurations.flinkShadowJar]
     zip64 true
 }
