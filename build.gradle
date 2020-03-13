@@ -1,14 +1,74 @@
-group 'org.yewc'
-version '1.0-SNAPSHOT'
-
+repositories {
+//    maven { url "${mavenUrl}/content/groups/public/" }
+    maven { url "http://maven.aliyun.com/nexus/content/groups/public" }
+}
 apply plugin: 'java'
+apply plugin: 'eclipse'
 
+group = 'org.yewc.flink'
+version = '1.0-SNAPSHOT'
 sourceCompatibility = 1.8
 
-repositories {
-    mavenCentral()
+dependencies {
+    compile('com.squareup.okio:okio:1.4.0')
+    compile('com.squareup.okhttp:okhttp:2.4.0')
+    compile('org.json:json:20180813')
+    compile('org.apache.flink:flink-clients_2.11:1.8.0')
+    compile('org.apache.flink:flink-core:1.8.0')
+    compile('org.apache.flink:flink-java:1.8.0')
+    compile('org.apache.flink:flink-table-planner_2.11:1.8.0')
+    compile('org.apache.flink:flink-table-api-scala-bridge_2.11:1.8.0')
+    compile('org.apache.flink:flink-statebackend-rocksdb_2.11:1.8.0'){
+        exclude module: 'log4j'
+        exclude module: 'slf4j-api'
+        exclude module: 'slf4j-log4j12'
+        exclude module: 'servlet-api'
+    }
+    compile('org.apache.hadoop:hadoop-client:2.7.1'){
+        exclude module: 'log4j'
+        exclude module: 'slf4j-api'
+        exclude module: 'slf4j-log4j12'
+        exclude module: 'servlet-api'
+    }
+    compile('org.apache.hadoop:hadoop-common:2.7.1'){
+        exclude module: 'log4j'
+        exclude module: 'slf4j-api'
+        exclude module: 'slf4j-log4j12'
+        exclude module: 'servlet-api'
+    }
 }
 
-dependencies {
-    testCompile group: 'junit', name: 'junit', version: '4.12'
+allprojects {
+
+    group 'org.yewc.flink'
+    version '1.0-SNAPSHOT'
+
+//	repositories {
+//		maven { url "http://nexus.fanxing.kgidc.cn/nexus/content/groups/public/" }
+//	}
+
+    apply plugin: 'java'
+    apply plugin: 'idea'
+
+    [compileJava, compileTestJava]*.options*.encoding = "UTF-8"
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+
+}
+
+subprojects  {
+
+    task copyLib(type: Sync, dependsOn: jar) {
+        from configurations.compile
+        from jar.archivePath
+        into 'build/deploy'
+    }
+
+    task deploy(dependsOn: copyLib)
+
+    // 显示当前项目下所有用于 compile 的 jar.
+    task listJars(description: 'Display all compile jars.') << {
+        configurations.compile.each { File file -> println file.name }
+    }
+
 }
