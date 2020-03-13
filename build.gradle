@@ -1,61 +1,84 @@
-repositories {
-//    maven { url "${mavenUrl}/content/groups/public/" }
-    maven { url "http://maven.aliyun.com/nexus/content/groups/public" }
+buildscript {
+    repositories {
+        jcenter() // this applies only to the Gradle 'Shadow' plugin
+    }
+    dependencies {
+        classpath 'com.github.jengelman.gradle.plugins:shadow:2.0.4'
+    }
 }
-apply plugin: 'java'
-apply plugin: 'application'
-apply plugin: 'idea'
 
-mainClassName = "org.yewc.flink.entry.ClientMain"
+plugins {
+    id 'java'
+    id 'application'
+    id 'idea'
+    // shadow plugin to produce fat JARs
+    id 'com.github.johnrengelman.shadow' version '2.0.4'
+}
 
 group = 'org.yewc.flink'
 version = '1.8.0-SNAPSHOT'
-sourceCompatibility = 1.8
+mainClassName = "org.yewc.flink.entry.ClientMain"
+
+ext {
+    javaVersion = '1.8'
+    flinkVersion = '1.8.0'
+    scalaBinaryVersion = '2.11'
+    slf4jVersion = '1.7.7'
+    log4jVersion = '1.2.17'
+}
+
+sourceCompatibility = javaVersion
+targetCompatibility = javaVersion
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+applicationDefaultJvmArgs = ["-Dlog4j.configuration=log4j.properties"]
+
+repositories {
+    maven { url "http://maven.aliyun.com/nexus/content/groups/public" }
+}
+
+configurations {
+    flinkShadowJar // dependencies which go into the shadowJar
+}
 
 dependencies {
-    compile('com.squareup.okio:okio:1.4.0')
-    compile('com.squareup.okhttp:okhttp:2.4.0')
-    compile('org.json:json:20180813')
-    compile('org.apache.flink:flink-clients_2.11:1.8.0')
-    compile('org.apache.flink:flink-core:1.8.0')
-    compile('org.apache.flink:flink-java:1.8.0')
-    compile('org.apache.flink:flink-table-planner_2.11:1.8.0')
-    compile('org.apache.flink:flink-table-api-scala-bridge_2.11:1.8.0')
-    compile('org.apache.flink:flink-statebackend-rocksdb_2.11:1.8.0')
-    compile('org.apache.hadoop:hadoop-client:2.7.1')
-    compile('org.apache.hadoop:hadoop-common:2.7.1')
+    flinkShadowJar('com.squareup.okio:okio:1.4.0')
+    flinkShadowJar('com.squareup.okhttp:okhttp:2.4.0')
+    flinkShadowJar('org.json:json:20180813')
+    flinkShadowJar('org.apache.flink:flink-clients_2.11:1.8.0')
+    flinkShadowJar('org.apache.flink:flink-core:1.8.0')
+    flinkShadowJar('org.apache.flink:flink-java:1.8.0')
+    flinkShadowJar('org.apache.flink:flink-table-planner_2.11:1.8.0')
+    flinkShadowJar('org.apache.flink:flink-table-api-scala-bridge_2.11:1.8.0')
+    flinkShadowJar('org.apache.flink:flink-statebackend-rocksdb_2.11:1.8.0')
+    flinkShadowJar('org.apache.hadoop:hadoop-client:2.7.1')
+    flinkShadowJar('org.apache.hadoop:hadoop-common:2.7.1')
 }
 
-allprojects {
+// make compileOnly dependencies available for tests:
+sourceSets {
+    main.compileClasspath += configurations.flinkShadowJar
+    main.runtimeClasspath += configurations.flinkShadowJar
 
-    group 'org.yewc.flink'
-    version '1.8.0-SNAPSHOT'
+    test.compileClasspath += configurations.flinkShadowJar
+    test.runtimeClasspath += configurations.flinkShadowJar
 
-//	repositories {
-//		maven { url "http://nexus.fanxing.kgidc.cn/nexus/content/groups/public/" }
-//	}
-
-    apply plugin: 'java'
-    apply plugin: 'application'
-    apply plugin: 'idea'
-
-    [compileJava, compileTestJava]*.options*.encoding = "UTF-8"
-    sourceCompatibility = 1.8
-    targetCompatibility = 1.8
-
+    javadoc.classpath += configurations.flinkShadowJar
 }
+
+run.classpath = sourceSets.main.runtimeClasspath
 
 jar {
     manifest {
-        attributes("Main-Class": "org.yewc.flink.entry.ClientMain",
-                "Implementation-Title": "Gradle")
+        attributes 'Built-By': System.getProperty('user.name'),
+                'Build-Jdk': System.getProperty('java.version')
     }
-    from {
-        configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
-    }
-    zip64 true
 }
 
-tasks.withType(JavaCompile){
-    options.encoding = "UTF-8"
+shadowJar {
+    mergeServiceFiles()
+    configurations = [project.configurations.flinkShadowJar]
+    zip64 true
 }
