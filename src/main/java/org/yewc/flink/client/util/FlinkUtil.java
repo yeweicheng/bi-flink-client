@@ -143,7 +143,7 @@ public final class FlinkUtil {
 //                    classLoader.close();
 //                }
             } catch (Exception e) {
-                logger.error("submit failed!", e);
+//                logger.error("submit failed!", e);
 
                 final Writer result = new StringWriter();
                 final PrintWriter printWriter = new PrintWriter(result);
