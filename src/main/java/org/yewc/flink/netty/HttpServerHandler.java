@@ -41,7 +41,7 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
                 callback.put("requestId", requestId);
                 callback.put("msg", e.getMessage());
                 String data = callback.toString();
-                logger.error("callback -> " + data);
+                logger.info("callback{" + (4 * data.length()) + ") -> " + data);
 
                 ByteBuf encoded = ctx.alloc().buffer(4 * data.length());
                 encoded.writeBytes(data.getBytes());
@@ -76,7 +76,7 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
         callback.put("requestId", requestId);
 
         String data = callback.toString();
-        logger.info("callback -> " + data);
+        logger.info("callback{" + (4 * data.length()) + ") -> " + data);
 
         ByteBuf encoded = ctx.alloc().buffer(4 * data.length());
         encoded.writeBytes(data.getBytes());

@@ -3,10 +3,13 @@ package org.yewc.flink.client.util;
 import com.squareup.okhttp.RequestBody;
 import org.apache.commons.lang.StringUtils;
 import org.apache.flink.api.common.JobSubmissionResult;
+import org.apache.flink.client.ClientUtils;
 import org.apache.flink.client.deployment.StandaloneClusterId;
 import org.apache.flink.client.program.ClusterClient;
 import org.apache.flink.client.program.PackagedProgram;
+import org.apache.flink.client.program.PackagedProgramUtils;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -96,7 +99,8 @@ public final class FlinkUtil {
 
                 clusterClient = new FlinkClusterClient(config, StandaloneClusterId.getInstance());
                 // 独立模式，托管给flink
-                clusterClient.setDetached(true);
+                // ps: 1.10.0版本没有这方法，默认就是托管
+//                clusterClient.setDetached(true);
                 clientMap.put(jobManager, clusterClient);
             }
 
@@ -124,10 +128,15 @@ public final class FlinkUtil {
             }
 
             String[] args = clientParams.getString(FIELD_NAME_PROGRAM_ARGUMENTS).trim().split(" ");
-            PackagedProgram prg = new PackagedProgram(sdkFile, urlList, args);
+            PackagedProgram.Builder builder = PackagedProgram.newBuilder()
+                    .setJarFile(sdkFile)
+                    .setUserClassPaths(urlList)
+                    .setArguments(args);
             if (clientParams.has(FIELD_NAME_SAVEPOINTPATH)) {
-                prg.setSavepointRestoreSettings(SavepointRestoreSettings.forPath(clientParams.getString(FIELD_NAME_SAVEPOINTPATH)));
+                builder.setSavepointRestoreSettings(SavepointRestoreSettings.forPath(
+                        clientParams.getString(FIELD_NAME_SAVEPOINTPATH)));
             }
+            PackagedProgram prg = builder.build();
 
             JSONObject jo = new JSONObject();
 
@@ -137,13 +146,16 @@ public final class FlinkUtil {
 //                    ClassLoader cl = Thread.class.getClassLoader();
 //                    classLoader = new DynamicJarClassLoader(urlList.toArray(new URL[urlList.size()]), cl);
 //                }
-                JobSubmissionResult result = clusterClient.run(prg, clientParams.getInt(FIELD_NAME_PARALLELISM));
+                JobGraph jobGraph = PackagedProgramUtils.createJobGraph(prg, clusterClient.getFlinkConfiguration(),
+                        clientParams.getInt(FIELD_NAME_PARALLELISM), false);
+                jobGraph.addJars(urlList);
+                JobSubmissionResult result = ClientUtils.submitJob(clusterClient, jobGraph);
                 jo.put("jobid", result.getJobID().toHexString());
 //                if (classLoader != null) {
 //                    classLoader.close();
 //                }
             } catch (Exception e) {
-                logger.error("submit failed!", e);
+//                logger.error("submit failed!", e);
 
                 final Writer result = new StringWriter();
                 final PrintWriter printWriter = new PrintWriter(result);

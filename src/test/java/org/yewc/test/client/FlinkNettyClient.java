@@ -2,10 +2,13 @@ package org.yewc.test.client;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.DelimiterBasedFrameDecoder;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.yewc.test.netty.TestHttpClientHandler;
@@ -17,7 +20,7 @@ public class FlinkNettyClient {
 
     static final boolean SSL = System.getProperty("ssl") != null;
     static final String HOST = System.getProperty("host", "127.0.0.1");
-    static final int PORT = Integer.parseInt(System.getProperty("port", "22222"));
+    static final int PORT = Integer.parseInt(System.getProperty("port", "22223"));
     static final int SIZE = Integer.parseInt(System.getProperty("size", "256"));
 
     public static void start() throws Exception {
@@ -40,6 +43,9 @@ public class FlinkNettyClient {
                         @Override
                         public void initChannel(SocketChannel ch) throws Exception {
                             ChannelPipeline p = ch.pipeline();
+                            p.addLast("framedecoder",
+                                    new DelimiterBasedFrameDecoder(65535, false,
+                                            Unpooled.copiedBuffer(new byte[]{-25})));
                             p.addLast(new HttpClientHandler());
                         }
                     });
@@ -51,8 +57,8 @@ public class FlinkNettyClient {
             JSONObject jo = new JSONObject();
             jo.put("requestId", "123456");
             jo.put("requestType", "submit");
-            jo.put("jobManager", "10.17.6.146:7081");
-            jo.put("flinkJar", "flink-executor-test.jar");
+            jo.put("jobManager", "10.17.6.146:8081");
+            jo.put("flinkJar", "flink-executor_1.10-0.2.0.jar");
             jo.put("classPaths", new JSONArray());
             jo.put("clientParams", new JSONObject("{\"programArgs\":\" --template-path hdfs://10.16.6.185:8020/flink/job-template/2c938a6e70a4f7fa0170a4fa56810000_1584009005309.json\",\"parallelism\":1}"));
             JSONObject systemJo = new JSONObject();

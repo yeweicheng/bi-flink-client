@@ -21,6 +21,7 @@ public class HttpClientHandler extends ChannelInboundHandlerAdapter {
         ByteBuf result = (ByteBuf) msg;
         byte[] resultStr = new byte[result.readableBytes()];
         result.readBytes(resultStr);
+        System.out.println("callback{" + (resultStr.length) + ") -> " + new String(resultStr));
         JSONArray ja = new JSONArray("[" + new String(resultStr).replaceAll("}\\{", "},{") + "]");
         result.release();
 
