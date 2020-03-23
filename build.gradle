@@ -51,6 +51,7 @@ dependencies {
     flinkShadowJar('org.apache.flink:flink-core:1.10.0')
     flinkShadowJar('org.apache.flink:flink-java:1.10.0')
     flinkShadowJar('org.apache.flink:flink-table-planner_2.11:1.10.0')
+    flinkShadowJar('org.apache.flink:flink-table-planner-blink_2.11:1.10.0')
     flinkShadowJar('org.apache.flink:flink-table-api-scala-bridge_2.11:1.10.0')
     flinkShadowJar('org.apache.flink:flink-statebackend-rocksdb_2.11:1.10.0')
     flinkShadowJar('org.apache.hadoop:hadoop-client:2.7.1')
