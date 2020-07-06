@@ -8,6 +8,7 @@ import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yewc.flink.client.util.FlinkUtil;
+import org.yewc.flink.yarn.CliFrontend;
 
 import java.util.List;
 
@@ -33,6 +34,12 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
                     case "submit":
                         submit(ctx, jo);
                         break;
+                    case "list":
+                        list(ctx, jo);
+                        break;
+                    case "cancel":
+                        cancel(ctx, jo);
+                        break;
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -56,11 +63,6 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
         logger.info("request -> " + jo.toString());
 
         String requestId = jo.getString("requestId");
-        String jobManager = jo.getString("jobManager");
-        String flinkJar = jo.getString("flinkJar");
-        List classPaths = jo.getJSONArray("classPaths").toList();
-        JSONObject clientParams = jo.getJSONObject("clientParams");
-        JSONObject systemParams = jo.getJSONObject("systemParams");
         String type = jo.getString("executeType");
         FlinkUtil.ExecuteType executeType = null;
         if ("client".equals(type)) {
@@ -69,15 +71,58 @@ public class HttpServerHandler extends ChannelInboundHandlerAdapter {
             executeType = FlinkUtil.ExecuteType.RESTFUL;
         } else if ("explain".equals(type)) {
             executeType = FlinkUtil.ExecuteType.EXPLAIN;
+        } else if ("yarn".equals(type)) {
+            executeType = FlinkUtil.ExecuteType.YARN;
         }
 
-        String returnData = FlinkUtil.submit(jobManager, flinkJar, classPaths, clientParams, systemParams, executeType);
+        String returnData = FlinkUtil.submit(jo, executeType);
         JSONObject callback = new JSONObject(returnData);
         callback.put("requestId", requestId);
 
-        String data = callback.toString();
-        logger.info("callback{" + (4 * data.length()) + ") -> " + data);
+        flushToClient(ctx, callback.toString());
+    }
 
+    private void list(ChannelHandlerContext ctx, JSONObject jo) throws Exception {
+        // 向客户端发送消息
+        logger.info("request -> " + jo.toString());
+
+        String requestId = jo.getString("requestId");
+
+        JSONObject params = new JSONObject();
+        StringBuilder args = new StringBuilder("list");
+        if (jo.has("yid")) {
+            args.append(" -yid ").append(jo.getString("yid"));
+        }
+        params.put("args", args.toString().split("\\s+"));
+
+        JSONObject callback = CliFrontend.handle(params);
+        callback.put("requestId", requestId);
+
+        flushToClient(ctx, callback.toString());
+    }
+
+    private void cancel(ChannelHandlerContext ctx, JSONObject jo) throws Exception {
+        // 向客户端发送消息
+        logger.info("request -> " + jo.toString());
+
+        String requestId = jo.getString("requestId");
+
+        JSONObject params = new JSONObject();
+        StringBuilder args = new StringBuilder("cancel");
+        if (jo.has("savepoint")) {
+            args.append(" -s ").append(jo.getString("savepoint"));
+        }
+        args.append(" -yid ").append(jo.getString("yid")).append(" ").append(jo.getString("fid"));
+        params.put("args", args.toString().split("\\s+"));
+
+        JSONObject callback = CliFrontend.handle(params);
+        callback.put("requestId", requestId);
+
+        flushToClient(ctx, callback.toString());
+    }
+
+    private void flushToClient(ChannelHandlerContext ctx, String data) {
+        logger.info("callback{" + (4 * data.length()) + ") -> " + data);
         ByteBuf encoded = ctx.alloc().buffer(4 * data.length());
         encoded.writeBytes(data.getBytes());
         ctx.write(encoded);

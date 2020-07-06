@@ -18,6 +18,8 @@ public class FlinkNettyServer {
     public static final Logger logger = LoggerFactory.getLogger(FlinkNettyServer.class);
 
     public static void start(int port) throws InterruptedException {
+        logger.info("flink server use port: " + port);
+
         //看做一个死循环，程序永远保持运行
         EventLoopGroup bossGroup = new NioEventLoopGroup(); //完成线程的接收，将连接发送给worker
         EventLoopGroup workerGroup = new NioEventLoopGroup(); //完成连接的处理

@@ -3,6 +3,7 @@ package org.yewc.flink.client.util;
 import com.squareup.okhttp.RequestBody;
 import org.apache.commons.lang.StringUtils;
 import org.apache.flink.api.common.JobSubmissionResult;
+import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.client.ClientUtils;
 import org.apache.flink.client.deployment.StandaloneClusterId;
 import org.apache.flink.client.program.ClusterClient;
@@ -15,13 +16,13 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yewc.flink.yarn.CliFrontend;
 
 import java.io.*;
 import java.net.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class FlinkUtil {
 
@@ -73,96 +74,163 @@ public final class FlinkUtil {
         return files;
     }
 
-    public static String submit(String jobManager, String jarName, List<String> classPaths,
-                                JSONObject clientParams, JSONObject systemParams, ExecuteType executeType) throws Exception {
-        String url = String.format(SUBMIT_JOB, jobManager, getJarId(jobManager, jarName));
-        if (executeType.equals(ExecuteType.EXPLAIN)) {
-//            return "curl -H \"Content-Type: application/json\" -XPOST '" + url + "' -d'" + param.toString() + "'";
-            JSONObject jo = new JSONObject();
-            jo.put("url", url);
-            jo.put("classPaths", classPaths);
-            jo.put("param", clientParams);
-            return jo.toString();
-        } else if (executeType.equals(ExecuteType.RESTFUL)) {
-            return HttpReqUtil.post(url, RequestBody.create(HttpReqUtil.jsonType, clientParams.toString()), true);
-        } else if (executeType.equals(ExecuteType.CLIENT)) {
-            ClusterClient<?> clusterClient;
-            if (clientMap.containsKey(jobManager)) {
-                clusterClient = clientMap.get(jobManager);
-            } else {
-                Configuration config = new Configuration();
-                String[] masterInfo = jobManager.split(":");
-                config.setString("jobmanager.rpc.address", masterInfo[0]);
-                if (masterInfo.length == 2) {
-                    config.setString("rest.port", masterInfo[1]);
-                }
+    public static String submit(JSONObject requestParams, ExecuteType executeType) throws Exception {
+        JSONObject clientParams = requestParams.getJSONObject("clientParams");
+        JSONObject systemParams = requestParams.getJSONObject("systemParams");
 
-                clusterClient = new FlinkClusterClient(config, StandaloneClusterId.getInstance());
-                // 独立模式，托管给flink
-                // ps: 1.10.0版本没有这方法，默认就是托管
-//                clusterClient.setDetached(true);
-                clientMap.put(jobManager, clusterClient);
+        if (executeType.equals(ExecuteType.YARN)) {
+//            final String[] argsx = {"run", "-m", "yarn-cluster", "-p", "2", "-yjm", "1024m", "-ytm", "1024m", "WordCount.jar"};
+            String yarnRunCommand = systemParams.getString("yarnRunCommand");
+
+            // 一般参数
+            JSONObject yarnParamValues = systemParams.getJSONObject("yarnParamValues");
+            for (String key : yarnParamValues.keySet()) {
+                yarnRunCommand = yarnRunCommand.replaceAll("\\$" + key, yarnParamValues.getString(key));
             }
+
+            //作业名
+            yarnRunCommand = yarnRunCommand.replaceAll("\\$jobName", requestParams.getString("jobName"));
+
+            // 并发
+            Integer parallelism = clientParams.getInt(FlinkUtil.FIELD_NAME_PARALLELISM);
+            yarnRunCommand = yarnRunCommand.replaceAll("\\$parallelism", parallelism.toString());
 
             String flinkSdkHdfsPath = systemParams.getString("flinkSdkHdfsPath");
             String flinkClasspathHdfsPath = systemParams.getString("flinkClasspathHdfsPath");
             String flinkTemporaryJarPath = systemParams.getString("flinkTemporaryJarPath");
 
+            // sdk包
+            String jarName = requestParams.getString("flinkJar");
             String sdkName = jarName.split("/")[jarName.split("/").length - 1];
-            File sdkFile = new File(flinkTemporaryJarPath + "/" + sdkName);
+            String localSdkPath = flinkTemporaryJarPath + File.separator + sdkName;
+            File sdkFile = new File(localSdkPath);
             if (!sdkFile.exists()) {
                 HadoopClient.downloadFileToLocal(HadoopClient.DEFAULT_NAMENODE, HadoopClient.DEFAULT_USER,
-                        flinkSdkHdfsPath + "/" + sdkName, flinkTemporaryJarPath + "/" + sdkName);
+                        flinkSdkHdfsPath + File.separator + sdkName, localSdkPath);
+            }
+            yarnRunCommand = yarnRunCommand.replaceAll("\\$sdk",
+                    localSdkPath.replaceAll("\\\\", "\\\\\\\\"));
+
+            // ck
+            if (clientParams.has(FIELD_NAME_SAVEPOINTPATH)) {
+                yarnRunCommand = yarnRunCommand.replaceAll("\\$savepoint",
+                        " -s " + clientParams.getString(FIELD_NAME_SAVEPOINTPATH).replaceAll("\\\\", "\\\\\\\\"));
+            } else {
+                yarnRunCommand = yarnRunCommand.replaceAll("\\$savepoint", "");
             }
 
-            List<URL> urlList = new ArrayList<>();
+            // 第三方依赖/业务依赖
+            List classPaths = requestParams.getJSONArray("classPaths").toList();
+            StringBuilder cpString = new StringBuilder();
             for (int i = 0; i < classPaths.size(); i++) {
-                String cp = classPaths.get(i);
+                String cp = (String) classPaths.get(i);
                 String cpName = cp.split("/")[cp.split("/").length - 1];
-                File cpFile = new File(flinkTemporaryJarPath + "/" + cpName);
+                String localCpPath = flinkTemporaryJarPath + File.separator + cpName;
+                File cpFile = new File(localCpPath);
                 if (!cpFile.exists()) {
                     HadoopClient.downloadFileToLocal(HadoopClient.DEFAULT_NAMENODE, HadoopClient.DEFAULT_USER,
-                            flinkClasspathHdfsPath + "/" + cpName, flinkTemporaryJarPath + "/" + cpName);
+                            flinkClasspathHdfsPath + File.separator + cpName, localCpPath);
                 }
-                urlList.add(cpFile.toURI().toURL());
+                cpString.append(" -C ").append("file:").append(File.separator).append(File.separator).append(localCpPath);
             }
+            yarnRunCommand = yarnRunCommand.replaceAll("\\$classpath", cpString.toString()
+                    .replaceAll("\\\\", "\\\\\\\\"));
 
-            String[] args = clientParams.getString(FIELD_NAME_PROGRAM_ARGUMENTS).trim().split(" ");
-            PackagedProgram.Builder builder = PackagedProgram.newBuilder()
-                    .setJarFile(sdkFile)
-                    .setUserClassPaths(urlList)
-                    .setArguments(args);
-            if (clientParams.has(FIELD_NAME_SAVEPOINTPATH)) {
-                builder.setSavepointRestoreSettings(SavepointRestoreSettings.forPath(
-                        clientParams.getString(FIELD_NAME_SAVEPOINTPATH)));
+            yarnRunCommand = yarnRunCommand.replaceAll("\\$params", clientParams.getString(FIELD_NAME_PROGRAM_ARGUMENTS).trim());
+            logger.info("yarn run command: " + yarnRunCommand);
+
+            JSONObject properties = new JSONObject();
+            properties.put("HADOOP_USER_NAME", systemParams.getString("flinkHadoopUserName"));
+
+            requestParams = new JSONObject();
+            requestParams.put("args", translateCommandline("run " + yarnRunCommand));
+            requestParams.put("properties", properties);
+
+            JSONObject callback = CliFrontend.handle(requestParams);
+            return callback.toString();
+        } else {
+            String jobManager = requestParams.getString("jobManager");
+            String jarName = requestParams.getString("flinkJar");
+            List classPaths = requestParams.getJSONArray("classPaths").toList();
+            String url = String.format(SUBMIT_JOB, jobManager, getJarId(jobManager, jarName));
+            if (executeType.equals(ExecuteType.EXPLAIN)) {
+//            return "curl -H \"Content-Type: application/json\" -XPOST '" + url + "' -d'" + param.toString() + "'";
+                JSONObject jo = new JSONObject();
+                jo.put("url", url);
+                jo.put("classPaths", classPaths);
+                jo.put("param", clientParams);
+                return jo.toString();
+            } else if (executeType.equals(ExecuteType.RESTFUL)) {
+                return HttpReqUtil.post(url, RequestBody.create(HttpReqUtil.jsonType, clientParams.toString()), true);
+            } else if (executeType.equals(ExecuteType.CLIENT)) {
+                ClusterClient<?> clusterClient;
+                if (clientMap.containsKey(jobManager)) {
+                    clusterClient = clientMap.get(jobManager);
+                } else {
+                    Configuration config = new Configuration();
+                    String[] masterInfo = jobManager.split(":");
+                    config.setString("jobmanager.rpc.address", masterInfo[0]);
+                    if (masterInfo.length == 2) {
+                        config.setString("rest.port", masterInfo[1]);
+                    }
+
+                    clusterClient = new FlinkClusterClient(config, StandaloneClusterId.getInstance());
+                    // 独立模式，托管给flink
+                    // ps: 1.10.0版本没有这方法，默认就是托管
+//                clusterClient.setDetached(true);
+                    clientMap.put(jobManager, clusterClient);
+                }
+
+                String flinkSdkHdfsPath = systemParams.getString("flinkSdkHdfsPath");
+                String flinkClasspathHdfsPath = systemParams.getString("flinkClasspathHdfsPath");
+                String flinkTemporaryJarPath = systemParams.getString("flinkTemporaryJarPath");
+
+                String sdkName = jarName.split("/")[jarName.split("/").length - 1];
+                File sdkFile = new File(flinkTemporaryJarPath + "/" + sdkName);
+                if (!sdkFile.exists()) {
+                    HadoopClient.downloadFileToLocal(HadoopClient.DEFAULT_NAMENODE, HadoopClient.DEFAULT_USER,
+                            flinkSdkHdfsPath + "/" + sdkName, flinkTemporaryJarPath + "/" + sdkName);
+                }
+
+                List<URL> urlList = new ArrayList<>();
+                for (int i = 0; i < classPaths.size(); i++) {
+                    String cp = (String) classPaths.get(i);
+                    String cpName = cp.split("/")[cp.split("/").length - 1];
+                    File cpFile = new File(flinkTemporaryJarPath + "/" + cpName);
+                    if (!cpFile.exists()) {
+                        HadoopClient.downloadFileToLocal(HadoopClient.DEFAULT_NAMENODE, HadoopClient.DEFAULT_USER,
+                                flinkClasspathHdfsPath + "/" + cpName, flinkTemporaryJarPath + "/" + cpName);
+                    }
+                    urlList.add(cpFile.toURI().toURL());
+                }
+
+                String[] args = clientParams.getString(FIELD_NAME_PROGRAM_ARGUMENTS).trim().split(" ");
+                PackagedProgram.Builder builder = PackagedProgram.newBuilder()
+                        .setJarFile(sdkFile)
+                        .setUserClassPaths(urlList)
+                        .setArguments(args);
+                if (clientParams.has(FIELD_NAME_SAVEPOINTPATH)) {
+                    builder.setSavepointRestoreSettings(SavepointRestoreSettings.forPath(
+                            clientParams.getString(FIELD_NAME_SAVEPOINTPATH), clientParams.getBoolean(FIELD_NAME_ALLOWNONRESTOREDSTATE)));
+                }
+                PackagedProgram prg = builder.build();
+
+                JSONObject jo = new JSONObject();
+
+                try {
+                    JobGraph jobGraph = PackagedProgramUtils.createJobGraph(prg, clusterClient.getFlinkConfiguration(),
+                            clientParams.getInt(FIELD_NAME_PARALLELISM), false);
+                    jobGraph.addJars(urlList);
+                    JobSubmissionResult result = ClientUtils.submitJob(clusterClient, jobGraph);
+                    jo.put("jobid", result.getJobID().toHexString());
+                } catch (Exception e) {
+                    final Writer result = new StringWriter();
+                    final PrintWriter printWriter = new PrintWriter(result);
+                    e.printStackTrace(printWriter);
+                    jo.put("errors", result.toString());
+                }
+                return jo.toString();
             }
-            PackagedProgram prg = builder.build();
-
-            JSONObject jo = new JSONObject();
-
-            try {
-//                DynamicJarClassLoader classLoader = null;
-//                if (urlList.size() > 0) {
-//                    ClassLoader cl = Thread.class.getClassLoader();
-//                    classLoader = new DynamicJarClassLoader(urlList.toArray(new URL[urlList.size()]), cl);
-//                }
-                JobGraph jobGraph = PackagedProgramUtils.createJobGraph(prg, clusterClient.getFlinkConfiguration(),
-                        clientParams.getInt(FIELD_NAME_PARALLELISM), false);
-                jobGraph.addJars(urlList);
-                JobSubmissionResult result = ClientUtils.submitJob(clusterClient, jobGraph);
-                jo.put("jobid", result.getJobID().toHexString());
-//                if (classLoader != null) {
-//                    classLoader.close();
-//                }
-            } catch (Exception e) {
-//                logger.error("submit failed!", e);
-
-                final Writer result = new StringWriter();
-                final PrintWriter printWriter = new PrintWriter(result);
-                e.printStackTrace(printWriter);
-                jo.put("errors", result.toString());
-            }
-            return jo.toString();
         }
 
         throw new RuntimeException("can not handle execute type");
@@ -210,7 +278,7 @@ public final class FlinkUtil {
     }
 
     public enum ExecuteType {
-        RESTFUL, CLIENT, EXPLAIN
+        RESTFUL, CLIENT, EXPLAIN, YARN
     }
 
     /**
@@ -286,4 +354,64 @@ public final class FlinkUtil {
         }
     }
 
+    public static String[] translateCommandline(String toProcess) {
+        if (toProcess == null || toProcess.length() == 0) {
+            //no command? no string
+            return new String[0];
+        }
+        // parse with a simple finite state machine
+
+        final int normal = 0;
+        final int inQuote = 1;
+        final int inDoubleQuote = 2;
+        int state = normal;
+        final StringTokenizer tok = new StringTokenizer(toProcess, "\"\' ", true);
+        final ArrayList<String> result = new ArrayList<String>();
+        final StringBuilder current = new StringBuilder();
+        boolean lastTokenHasBeenQuoted = false;
+
+        while (tok.hasMoreTokens()) {
+            String nextTok = tok.nextToken();
+            switch (state) {
+                case inQuote:
+                    if ("\'".equals(nextTok)) {
+                        lastTokenHasBeenQuoted = true;
+                        state = normal;
+                    } else {
+                        current.append(nextTok);
+                    }
+                    break;
+                case inDoubleQuote:
+                    if ("\"".equals(nextTok)) {
+                        lastTokenHasBeenQuoted = true;
+                        state = normal;
+                    } else {
+                        current.append(nextTok);
+                    }
+                    break;
+                default:
+                    if ("\'".equals(nextTok)) {
+                        state = inQuote;
+                    } else if ("\"".equals(nextTok)) {
+                        state = inDoubleQuote;
+                    } else if (" ".equals(nextTok)) {
+                        if (lastTokenHasBeenQuoted || current.length() != 0) {
+                            result.add(current.toString());
+                            current.setLength(0);
+                        }
+                    } else {
+                        current.append(nextTok);
+                    }
+                    lastTokenHasBeenQuoted = false;
+                    break;
+            }
+        }
+        if (lastTokenHasBeenQuoted || current.length() != 0) {
+            result.add(current.toString());
+        }
+        if (state == inQuote || state == inDoubleQuote) {
+            throw new RuntimeException("unbalanced quotes in " + toProcess);
+        }
+        return result.toArray(new String[result.size()]);
+    }
 }

@@ -54,8 +54,20 @@ dependencies {
     flinkShadowJar('org.apache.flink:flink-table-planner-blink_2.11:1.10.0')
     flinkShadowJar('org.apache.flink:flink-table-api-scala-bridge_2.11:1.10.0')
     flinkShadowJar('org.apache.flink:flink-statebackend-rocksdb_2.11:1.10.0')
+
+    flinkShadowJar('io.netty:netty:3.10.5.Final')
+    flinkShadowJar('io.netty:netty-all:4.0.23.Final')
+    flinkShadowJar('com.alibaba:fastjson:1.2.54')
+    flinkShadowJar('redis.clients:jedis:2.9.0')
+
+    // 线上模式
+    //    flinkShadowJar('org.apache.flink:flink-yarn_2.11:1.10.0')
     flinkShadowJar('org.apache.hadoop:hadoop-client:2.7.1')
     flinkShadowJar('org.apache.hadoop:hadoop-common:2.7.1')
+
+    // 本地模式
+    compile files("E:\\hadoop-2.8.0\\etc\\hadoop")
+    compile files("C:\\Users\\barneyye\\IdeaProjects\\flink\\flink-yarn\\target\\flink-yarn_2.11-1.10-SNAPSHOT.jar")
 }
 
 // make compileOnly dependencies available for tests:
