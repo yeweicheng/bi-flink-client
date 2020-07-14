@@ -46,9 +46,12 @@ public class HttpReqUtil {
 
     public static String method(String method, String url, RequestBody body, Map<String, String> header, boolean ignoreError) throws IOException {
         Request.Builder rb = new Request.Builder().url(url);
-        for (String key : header.keySet()) {
-            rb.addHeader(key, header.get(key));
+        if (header != null) {
+            for (String key : header.keySet()) {
+                rb.addHeader(key, header.get(key));
+            }
         }
+
         Request request = rb.method(method, body).build();
         Response response = client.newCall(request).execute();
         if (!response.isSuccessful() && !ignoreError)

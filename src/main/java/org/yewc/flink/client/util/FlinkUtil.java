@@ -74,6 +74,10 @@ public final class FlinkUtil {
         return files;
     }
 
+    public static boolean isLinux() {
+        return System.getProperty("os.name").toLowerCase().contains("linux");
+    }
+
     public static String submit(JSONObject requestParams, ExecuteType executeType) throws Exception {
         JSONObject clientParams = requestParams.getJSONObject("clientParams");
         JSONObject systemParams = requestParams.getJSONObject("systemParams");
@@ -113,8 +117,15 @@ public final class FlinkUtil {
 
             // ck
             if (clientParams.has(FIELD_NAME_SAVEPOINTPATH)) {
+                String nonState = "";
+                if (clientParams.getBoolean(FIELD_NAME_ALLOWNONRESTOREDSTATE)) {
+                    nonState = " -n ";
+                }
+
                 yarnRunCommand = yarnRunCommand.replaceAll("\\$savepoint",
-                        " -s " + clientParams.getString(FIELD_NAME_SAVEPOINTPATH).replaceAll("\\\\", "\\\\\\\\"));
+                        " -s " + clientParams.getString(FIELD_NAME_SAVEPOINTPATH).replaceAll("\\\\", "\\\\\\\\")
+                        + nonState
+                );
             } else {
                 yarnRunCommand = yarnRunCommand.replaceAll("\\$savepoint", "");
             }
@@ -131,7 +142,12 @@ public final class FlinkUtil {
                     HadoopClient.downloadFileToLocal(HadoopClient.DEFAULT_NAMENODE, HadoopClient.DEFAULT_USER,
                             flinkClasspathHdfsPath + File.separator + cpName, localCpPath);
                 }
-                cpString.append(" -C ").append("file:").append(File.separator).append(File.separator).append(localCpPath);
+
+                cpString.append(" -C ").append("file:").append(File.separator);
+                if (isLinux()) {
+                    cpString.append(File.separator);
+                }
+                cpString.append(localCpPath);
             }
             yarnRunCommand = yarnRunCommand.replaceAll("\\$classpath", cpString.toString()
                     .replaceAll("\\\\", "\\\\\\\\"));
